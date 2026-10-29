@@ -268,7 +268,7 @@ if blobs and batch and set(batch["keys"]) == set(blobs):
     ok_normal = False
     if normal:
         st.caption("「通過」只代表算術一致、沒有模糊標記，不代表 AI 一定讀對，建議抽查幾張。")
-        with st.expander("查看通過的單據清單與抽查"):
+        with st.expander(f"查看全部 {len(normal)} 張通過的單據（清單＋逐張原圖）"):
             st.dataframe(pd.DataFrame([{
                 "檔案": names[k], "單號": results[k]["raw"].get("doc_number", ""),
                 "日期": results[k]["raw"].get("date", ""),
@@ -276,10 +276,37 @@ if blobs and batch and set(batch["keys"]) == set(blobs):
                 "品項數": len(results[k]["raw"].get("items", [])),
                 "總金額": results[k]["raw"].get("stated_total", 0)} for k in normal]),
                 use_container_width=True, hide_index=True)
-            pick = st.selectbox("抽查其中一張：", normal, format_func=lambda x: names[x])
-            cc1, cc2 = st.columns([1, 1.3])
-            cc1.image(thumbs[pick], use_container_width=True)
-            cc2.dataframe(items_df(results[pick]["raw"].get("items")), use_container_width=True)
+
+            # 每一張通過的單據都可以展開看原圖與識別結果（Streamlit 不允許在 expander 裡再放 expander，
+            # 所以這裡用「單選按鈕 + 上一張/下一張」逐張瀏覽，並另外提供「一次全部顯示」）
+            view_mode = st.radio("查看方式", ["逐張瀏覽", "一次全部顯示"], horizontal=True, key="normal_view")
+
+            def show_doc(k):
+                d = results[k]["raw"]
+                cc1, cc2 = st.columns([1, 1.3])
+                cc1.image(thumbs[k], use_container_width=True)
+                cc2.write(f"**{names[k]}**｜單號 {d.get('doc_number') or '（空）'}｜日期 {d.get('date', '')}")
+                cc2.write(f"客戶：{d.get('customer_name', '')}｜單據總金額：{d.get('stated_total', 0)}")
+                cc2.dataframe(items_df(d.get("items")), use_container_width=True)
+
+            if view_mode == "逐張瀏覽":
+                if st.session_state.get("normal_idx", 0) >= len(normal):
+                    st.session_state["normal_idx"] = 0
+                nav1, nav2, nav3 = st.columns([1, 1, 4])
+                if nav1.button("⬅️ 上一張", use_container_width=True, key="normal_prev"):
+                    st.session_state["normal_idx"] = (st.session_state.get("normal_idx", 0) - 1) % len(normal)
+                if nav2.button("下一張 ➡️", use_container_width=True, key="normal_next"):
+                    st.session_state["normal_idx"] = (st.session_state.get("normal_idx", 0) + 1) % len(normal)
+                idx = st.session_state.get("normal_idx", 0)
+                nav3.markdown(f"第 **{idx + 1} / {len(normal)}** 張")
+                show_doc(normal[idx])
+            else:
+                if len(normal) > 20:
+                    st.caption("單據較多，頁面會比較長、載入較慢。")
+                for n_, k in enumerate(normal, 1):
+                    st.markdown(f"##### {n_}. {names[k]}")
+                    show_doc(k)
+                    st.divider()
         ok_normal = st.checkbox(f"✍️ 我已抽查，確認這 {len(normal)} 張通過檢查的單據無誤", key="ok_normal")
 
     for k in normal:
